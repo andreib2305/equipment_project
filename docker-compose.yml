@@ -1,0 +1,87 @@
+name: equipment-maintenance
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    restart: unless-stopped
+
+  django:
+    build:
+      context: .
+      dockerfile: django_project/Dockerfile
+    environment:
+      DJANGO_DEBUG: "1"
+      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,django"
+      MONGO_URI: "mongodb://mongo:27017"
+      MONGO_DB_NAME: "equipment_maintenance"
+      MONGO_AUDIT_COLLECTION: "audit_events"
+      MONGO_AUDIT_ENABLED: "1"
+      DJANGO_DB_PATH: "/app/data/db.sqlite3"
+    ports:
+      - "8000:8000"
+    volumes:
+      # SQLite и суперпользователь сохраняются между пересборками контейнера.
+      - django_data:/app/data
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+
+  api_service:
+    build:
+      context: .
+      dockerfile: api_service/Dockerfile
+    environment:
+      SERVICE_NAME: api_service
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/%2F"
+      RABBITMQ_QUEUE: maintenance_requests
+      RABBITMQ_ENABLED: "1"
+    ports:
+      - "8001:8001"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  consumer:
+    build:
+      context: .
+      dockerfile: api_service/Dockerfile
+    command: ["python", "-m", "api_service.consumer"]
+    environment:
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/%2F"
+      RABBITMQ_QUEUE: maintenance_requests
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+  django_data:
