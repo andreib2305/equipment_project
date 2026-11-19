@@ -1,5 +1,3 @@
-# Equipment Maintenance — учебный проект
-
 Система заявок на обслуживание оборудования: Django/DRF backend, FastAPI-сервис
 приёма заявок, RabbitMQ для событий и MongoDB для журнала аудита.
 
